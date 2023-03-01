@@ -141,3 +141,12 @@ def log_gaussian(c, mu, var):
         Criterion for Q(condition classifier)
     """
     return -((c - mu)**2)/(2*var+1e-8) - 0.5*torch.log(2*np.pi*var+1e-8)
+
+
+def sample_c_discrete(n_samples, n_classes):
+    """
+    Sample c from the discrete latent space.
+    """
+    c = np.zeros((n_samples, n_classes))
+    c[np.arange(n_samples), np.random.randint(0, n_classes, n_samples)] = 1
+    return torch.tensor(c, dtype=torch.float32)
