@@ -113,8 +113,8 @@ def get_sample_image(n_noise, n_c_continuous, G):
     
     # Generate images with varying discrete code
     for num in range(10):
-        # One-hot encode the discrete code
         for i in range(10):
+            # One-hot encode the discrete code
             c_discrete = to_onehot(i).to(DEVICE) # (B,10)
             z = torch.randn(1, n_noise).to(DEVICE)
             # Set the continuous code to zero
