@@ -11,16 +11,25 @@ from GAN import Discriminator, Generator, Qrator
 from utils import sample_noise, log_gaussian, get_sample_image
 
 
+CHECKPOINT_DIR = './checkpoints'
 MODEL_NAME = 'infoGAN'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+SAVE_IMAGES_FREQ = 1000 # 1000 originaly
+PRINT_LOSS_FREQ = 500 # 500 originaly
+LOG_LOSS_FREQ = 100 # 100 originaly
+SAVE_CHECKPOINT_FREQ = 1000
+
+if not os.path.exists(CHECKPOINT_DIR):
+    os.makedirs(CHECKPOINT_DIR)
+    
 writer = SummaryWriter()
 
 D = Discriminator().to(DEVICE)
 G = Generator().to(DEVICE)
 Q = Qrator().to(DEVICE)
 
-if not os.path.exist("data/MNIST/"):
+if not os.path.exists("data/MNIST/"):
     transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Normalize(mean=[0.5],
                                     std=[0.5])]
@@ -102,7 +111,7 @@ for epoch in range(max_epoch+1):
         G_opt.step()
 
         # Log losses and histograms for tensorboard
-        if step > 500 and step % 100 == 0:
+        if step > 500 and step % LOG_LOSS_FREQ == 0:
             writer.add_scalar('loss/total', GnQ_loss, step)
             writer.add_scalar('loss/Q_discrete', Q_loss_discrete, step)
             writer.add_scalar('loss/Q_continuous', Q_loss_continuous, step)
@@ -110,19 +119,32 @@ for epoch in range(max_epoch+1):
             writer.add_histogram('output/mu', cc_mu)
             writer.add_histogram('output/var', cc_var)
         
-        # Print losses every 500 steps
-        if step % 500 == 0:
+        # Print losses every PRINT_LOSS_FREQ steps
+        if step % PRINT_LOSS_FREQ == 0:
             print('Epoch: {}/{}, Step: {}, D Loss: {}, G Loss: {}, GnQ Loss: {}, Time: {}'\
                   .format(epoch, max_epoch, step, D_loss.item(), G_loss.item(), GnQ_loss.item(), str(datetime.datetime.today())[:-7]))
             
-        # Save generated images every 1000 steps
-        if step % 1000 == 0:
+        # Save generated images every SAVE_IMAGES_FREQ steps
+        if step % SAVE_IMAGES_FREQ == 0:
             G.eval()
-            img1, img2, img3 = get_sample_image()
+            # TO DO: check if call of get_sample_image in next line is OK
+            img1, img2, img3 = get_sample_image(n_noise, n_c_continuous, G)
             plt.imsave('samples/{}_step{}_type1.jpg'.format(MODEL_NAME, str(step).zfill(3)), img1, cmap='gray')
             plt.imsave('samples/{}_step{}_type2.jpg'.format(MODEL_NAME, str(step).zfill(3)), img2, cmap='gray')
             plt.imsave('samples/{}_step{}_type3.jpg'.format(MODEL_NAME, str(step).zfill(3)), img3, cmap='gray')
             G.train()
+
+        # Save model checkpoint every SAVE_CHECKPOINT_FREQ steps
+        if step % SAVE_CHECKPOINT_FREQ == 0:
+          checkpoint_path = os.path.join(CHECKPOINT_DIR, f'model_step{step}.pt')
+          torch.save({
+                'epoch': epoch,
+                'step': step,
+                'G_state_dict': G.state_dict(),
+                'D_state_dict': D.state_dict(),
+                'G_opt_state_dict': G_opt.state_dict(),
+                'D_opt_state_dict': D_opt.state_dict(),
+            }, checkpoint_path)
 
         writer.export_scalars_to_json("./all_summary.json")
         writer.close()
