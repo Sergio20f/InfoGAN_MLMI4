@@ -127,7 +127,6 @@ for epoch in range(max_epoch+1):
         # Save generated images every SAVE_IMAGES_FREQ steps
         if step % SAVE_IMAGES_FREQ == 0:
             G.eval()
-            # TO DO: check if call of get_sample_image in next line is OK
             img1, img2, img3 = get_sample_image(n_noise, n_c_continuous, G)
             plt.imsave('samples/{}_step{}_type1.jpg'.format(MODEL_NAME, str(step).zfill(3)), img1, cmap='gray')
             plt.imsave('samples/{}_step{}_type2.jpg'.format(MODEL_NAME, str(step).zfill(3)), img2, cmap='gray')
