@@ -51,7 +51,7 @@ D_opt = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0.5, 0.99))
 G_opt = torch.optim.Adam([{'params':G.parameters()}, {'params':Q.parameters()}], lr=1e-3, betas=(0.5, 0.99))
 
 # Training parameters
-max_epoch = 50 # need more than 200 epochs for training generator
+max_epoch = 50
 step = 0
 n_critic = 1 # for training more k steps about Discriminator
 n_noise = 62
@@ -145,5 +145,5 @@ for epoch in range(max_epoch+1):
                 'D_opt_state_dict': D_opt.state_dict(),
             }, checkpoint_path)
 
-        writer.export_scalars_to_json("./all_summary.json")
-        writer.close()
+writer.export_scalars_to_json("./all_summary.json")
+writer.close()
