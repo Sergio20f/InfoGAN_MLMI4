@@ -15,7 +15,8 @@ class Generator(nn.Module):
         self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False)
         self.bn3 = nn.BatchNorm2d(64)
         self.conv2 = nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False)
-        self.activation = nn.ReLU()
+        self.activation1 = nn.ReLU()
+        self.activation2 = nn.Tanh()
         
     def forward(self, z, c):
         z = z.view(z.size(0), -1)
@@ -23,16 +24,16 @@ class Generator(nn.Module):
         noise = torch.cat((z, c), 1)
         x = self.fc1(noise)
         x = self.bn1(x)
-        x = self.activation(x)
+        x = self.activation1(x)
         x = self.fc2(x)
         x = self.bn2(x)
-        x = self.activation(x)
+        x = self.activation1(x)
         x = x.view(x.size(0), 128, 7, 7)
         x = self.conv1(x)
         x = self.bn3(x)
-        x = self.activation(x)
+        x = self.activation1(x)
         x = self.conv2(x)
-        x = self.activation(x)
+        x = self.activation2(x)
 
         return x
 
