@@ -10,9 +10,8 @@ from torch.utils.data import DataLoader
 from GAN import Discriminator, Generator, Qrator
 from utils import sample_noise, log_gaussian, get_sample_image
 
-
 CHECKPOINT_DIR = './checkpoints'
-MODEL_NAME = 'infoGAN'
+MODEL_NAME = "infoWGAN"
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 SAVE_IMAGES_FREQ = 1000 # 1000 originaly
@@ -25,6 +24,7 @@ if not os.path.exists(CHECKPOINT_DIR):
     
 writer = SummaryWriter()
 
+### CHANGE WITH WGAN NETWORKS
 D = Discriminator().to(DEVICE)
 G = Generator().to(DEVICE)
 Q = Qrator().to(DEVICE)
@@ -42,13 +42,14 @@ if not os.path.exists("samples/"):
 batch_size = 128
 dataloader = DataLoader(dataset=mnist, batch_size=batch_size, shuffle=True, drop_last=True, pin_memory=True)
 
-# Losses
-bce_loss = nn.BCELoss()
+# Loss for Q
 ce_loss = nn.CrossEntropyLoss()
 
 # Optimisers
-D_opt = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0.5, 0.99))
-G_opt = torch.optim.Adam([{'params':G.parameters()}, {'params':Q.parameters()}], lr=1e-3, betas=(0.5, 0.99))
+D_opt = torch.optim.RMSprop(D.parameters(), lr=5e-5)
+G_opt = torch.optim.RMSprop(G.parameters(), lr=5e-5)
+Q_opt = torch.optim.Adam(Q.parameters(), lr=1e-3, betas=(0.5, 0.99))
+# Probably will have to change due to the fact that G uses W_d and Q BCE
 
 # Training parameters
 max_epoch = 50
@@ -56,50 +57,71 @@ step = 0
 n_critic = 1 # for training more k steps about Discriminator
 n_noise = 62
 n_c_discrete, n_c_continuous = 10, 2
+lambda_gp = 10
 
 # Initialise the labels
 D_labels = torch.ones([batch_size, 1]).to(DEVICE) # Discriminator Label to real
 D_fakes = torch.zeros([batch_size, 1]).to(DEVICE) # Discriminator Label to fake
 
-# Train the InfoGAN model
+# Train InfoWGAN model
 for epoch in range(max_epoch+1):
     for idx, (images, labels) in enumerate(dataloader):
         step += 1
-        
+
         # Reshape labels to match batch size
         labels = labels.view(batch_size, 1)
-        
-        # Training Discriminator
-        x = images.to(DEVICE)
-        x_outputs, _, = D(x)
-        D_x_loss = bce_loss(x_outputs, D_labels)
 
-        z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
-        z_outputs, _, = D(G(z, c))
-        D_z_loss = bce_loss(z_outputs, D_fakes)
-        D_loss = D_x_loss + D_z_loss
-        
-        D_opt.zero_grad()
-        D_loss.backward()
-        D_opt.step()
+        # Training critic
+        for k in range(n_critic):
+            x = images.to(DEVICE)
+            x_outputs, _ = D(x)
+            D_x_loss = -torch.mean(x_outputs) # New loss - it doesn't account for labels
 
-        # Training Generator
+            z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+            z_outputs, _ = D(G(z, c)) # detach the G?
+            D_z_loss = torch.mean(z_outputs) # New loss - it doesn't account for fake labels
+            # Compute the Wasserstein distance
+            D_loss = D_x_loss + D_z_loss
+
+            # Gradient penalty - ensures Lipschitz constraint on the discriminator
+            alpha = torch.rand(batch_size, 1, 1, 1).to(DEVICE)
+            interpolates = (alpha * x + (1 - alpha) * G(z, c)).requires_grad_(True)
+            d_interpolates = D(interpolates)
+            gradients = torch.autograd.grad(outputs=d_interpolates, inputs=interpolates,
+                                            grad_outputs=torch.ones_like(d_interpolates),
+                                            create_graph=True, retain_graph=True)[0]
+            gradient_penalty = torch.mean((gradients.norm(2, dim=1) - 1)**2)
+            # Update loss
+            D_loss += lambda_gp * gradient_penalty
+
+            # Backprop
+            D_opt.zero_grad()
+            D_loss.backward()
+            D_opt.step()
+
+            # Clip discriminator weights
+            for p in D.parameters():
+                p.data.clamp_(-0.01, 0.01)
+
+        # Training the Generator
         z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+        z_outputs, features = D(G(z, c))
         
+        # Predict the latent codes with the Qrator using discriminator features
+        c_discrete_out, cc_mu, cc_var = Q(features)
+
         # Get discrete label from continuous vector using argmax
         c_discrete_label = torch.max(c[:, :-2], 1)[1].view(-1, 1)
 
-        z_outputs, features = D(G(z, c)) # HERE WE USE THE FEATURES WHICH ARE THE SECOND OUTPUT OF THE D-NETWORK
-        c_discrete_out, cc_mu, cc_var = Q(features)
+        # Calculate Wasserstein distance for the Generator network
+        G_loss = -torch.mean(z_outputs)
 
-        G_loss = bce_loss(z_outputs, D_labels)
-        
         # Calculate cross entropy loss for discrete code
         Q_loss_discrete = ce_loss(c_discrete_out, c_discrete_label.view(-1))
-        
+
         # Calculate log-likelihood of continuous code assuming Gaussian distribution
         Q_loss_continuous = -torch.mean(torch.sum(log_gaussian(c[:, -2:], cc_mu, cc_var), 1))
-        
+
         # Calculate total mutual information loss
         mutual_info_loss = Q_loss_discrete + Q_loss_continuous*0.1
 
@@ -107,8 +129,13 @@ for epoch in range(max_epoch+1):
         GnQ_loss = G_loss + mutual_info_loss
 
         G_opt.zero_grad()
-        GnQ_loss.backward()
+        GnQ_loss.backward() # This or G_loss
         G_opt.step()
+
+        Q_opt.zero_grad()
+        mutual_info_loss.backward() # This or GnQ loss?
+        Q_opt.step()
+
 
         # Log losses and histograms for tensorboard
         if step > 500 and step % LOG_LOSS_FREQ == 0:

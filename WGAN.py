@@ -2,12 +2,12 @@ import torch
 import torch.nn as nn
 
 
-class Generator(nn.Module):
+class W_Generator(nn.Module):
     """
     Convolutional Generator for MNIST
     """
     def __init__(self, input_size=62, code_size=12, num_classes=784):
-        super(Generator, self).__init__()
+        super(W_Generator, self).__init__()
         self.fc1 = nn.Linear(input_size+code_size, 1024)
         self.bn1 = nn.BatchNorm1d(1024)
         self.fc2 = nn.Linear(1024, 7*7*128)
@@ -36,14 +36,14 @@ class Generator(nn.Module):
         x = self.activation2(x)
 
         return x
+    
 
-
-class Discriminator(nn.Module):
+class W_Discriminator(nn.Module):
     """
-    Convolutional Discriminator for MNIST
+    Convolutional Discriminator for InfoWGAN
     """
     def __init__(self, in_channel=1):
-        super(Discriminator, self).__init__()
+        super(W_Discriminator, self).__init__()
         self.conv1 = nn.Conv2d(in_channel, 64, kernel_size=3, stride=2, padding=1, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.activation = nn.LeakyReLU(0.1)
@@ -52,7 +52,6 @@ class Discriminator(nn.Module):
         self.fc1 = nn.Linear(128*7*7, 1024)
         self.bn3 = nn.BatchNorm1d(1024)
         self.fc2 = nn.Linear(1024, 1)
-        self.activation2 = nn.Sigmoid()
     
     def forward(self, x):
         y = self.conv1(x)
@@ -64,14 +63,12 @@ class Discriminator(nn.Module):
         y = y.view(y.size(0), -1)
         y = self.fc1(y)
         y = self.bn3(y)
-        y = self.activation(y) # y == FEATURES DO NOT GO THROUGH SIGMOID NOR FINAL DENSE LAYER
+        y = self.activation(y) # y == FEATURES
         d = self.fc2(y)
-        d = self.activation2(d)  # Real / Fake 
-
         return d, y # return with top layer features for Q
 
 
-class Qrator(nn.Module):
+class W_Qrator(nn.Module):
     """
     Regularization Network for increasing Mutual Information in InfoGAN.
 
@@ -87,7 +84,7 @@ class Qrator(nn.Module):
     is trained to maximize the mutual information between these codes and the generated images.
     """
     def __init__(self):
-        super(Qrator, self).__init__()
+        super(W_Qrator, self).__init__()
         self.fc1 = nn.Linear(1024, 128)
         self.bn1 = nn.BatchNorm1d(128)
         self.activation1 = nn.LeakyReLU(0.1)
