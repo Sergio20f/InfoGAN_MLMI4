@@ -95,7 +95,7 @@ class W_Qrator(nn.Module):
         c = self.fc1(x)
         c = self.bn1(c)
         c = self.activation1(c)
-        c = self.fc2(c)
+        c = self.fc2(c.detach())
         c_discrete = torch.softmax(c[:, :10], dim=-1) # Digit Label {0~9}
         c_mu = c[:, 10:12] # mu & var of Rotation & Thickness
         c_var = c[:, 12:14].exp() # mu & var of Rotation & Thickness

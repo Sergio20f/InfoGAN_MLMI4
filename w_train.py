@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-from GAN import Discriminator, Generator, Qrator
+from WGAN import W_Discriminator, W_Generator, W_Qrator
 from utils import sample_noise, log_gaussian, get_sample_image
 
 CHECKPOINT_DIR = './checkpoints'
@@ -25,16 +25,19 @@ if not os.path.exists(CHECKPOINT_DIR):
 writer = SummaryWriter()
 
 ### CHANGE WITH WGAN NETWORKS
-D = Discriminator().to(DEVICE)
-G = Generator().to(DEVICE)
-Q = Qrator().to(DEVICE)
+D = W_Discriminator().to(DEVICE)
+G = W_Generator().to(DEVICE)
+Q = W_Qrator().to(DEVICE)
+
+transform = transforms.Compose([transforms.ToTensor(),
+                                    transforms.Normalize(mean=[0.5],
+                                    std=[0.5])])
 
 if not os.path.exists("data/MNIST/"):
-    transform = transforms.Compose([transforms.ToTensor(),
-                                    transforms.Normalize(mean=[0.5],
-                                    std=[0.5])]
-    )
     mnist = datasets.MNIST(root='./data/', train=True, transform=transform, download=True)
+else:
+    mnist = datasets.MNIST(root='./data/', train=True, transform=transform, download=False)
+
 
 if not os.path.exists("samples/"):
     os.mkdir("samples/")
@@ -86,7 +89,7 @@ for epoch in range(max_epoch+1):
             # Gradient penalty - ensures Lipschitz constraint on the discriminator
             alpha = torch.rand(batch_size, 1, 1, 1).to(DEVICE)
             interpolates = (alpha * x + (1 - alpha) * G(z, c)).requires_grad_(True)
-            d_interpolates = D(interpolates)
+            d_interpolates, _ = D(interpolates)
             gradients = torch.autograd.grad(outputs=d_interpolates, inputs=interpolates,
                                             grad_outputs=torch.ones_like(d_interpolates),
                                             create_graph=True, retain_graph=True)[0]
@@ -101,7 +104,7 @@ for epoch in range(max_epoch+1):
 
             # Clip discriminator weights
             for p in D.parameters():
-                p.data.clamp_(-0.01, 0.01)
+                p.data = p.data.clamp_(-0.01, 0.01)
 
         # Training the Generator
         z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
@@ -124,17 +127,17 @@ for epoch in range(max_epoch+1):
 
         # Calculate total mutual information loss
         mutual_info_loss = Q_loss_discrete + Q_loss_continuous*0.1
-
+    
+        Q_opt.zero_grad()
+        mutual_info_loss.backward(retain_graph=True) # This or GnQ loss?
+        Q_opt.step()
+    
         # Calculate total loss for Generator and Qrator
         GnQ_loss = G_loss + mutual_info_loss
-
+        
         G_opt.zero_grad()
-        GnQ_loss.backward() # This or G_loss
+        GnQ_loss.backward(retain_graph=True) # This or G_loss
         G_opt.step()
-
-        Q_opt.zero_grad()
-        mutual_info_loss.backward() # This or GnQ loss?
-        Q_opt.step()
 
 
         # Log losses and histograms for tensorboard
