@@ -65,7 +65,7 @@ for epoch in range(max_epoch):
     for idx, (images, _) in enumerate(dataloader):
         # Training Discriminator
         x = images.to(DEVICE)
-        x_outputs = D(x)
+        x_outputs, _ = D(x)
         D_x_loss = criterion(x_outputs, D_labels)
 
         z = torch.randn(batch_size, n_noise).to(DEVICE)
