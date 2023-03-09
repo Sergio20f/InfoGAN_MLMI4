@@ -67,6 +67,25 @@ def sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=None, 
     return z, c
 
 
+def vanilla_gan_get_sample_image(G, n_noise):
+    """
+        Generates and saves 100 sample images from a generative model.
+        Args:
+            n_noise (int): integer representing the size of the noise vector.ñ
+            G: the generator model.
+
+    """
+    DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+
+    z = torch.randn(100, n_noise).to(DEVICE)
+    y_hat = G(z).view(100, 28, 28) # (100, 28, 28)
+    result = y_hat.cpu().data.numpy()
+    img = np.zeros([280, 280])
+    for j in range(10):
+        img[j*28:(j+1)*28] = np.concatenate([x for x in result[j*10:(j+1)*10]], axis=-1)
+    return img
+
+
 def get_sample_image(n_noise, n_c_continuous, G):
     """
     Generates and saves 100 sample images from a generative model.
