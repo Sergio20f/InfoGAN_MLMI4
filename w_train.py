@@ -49,10 +49,13 @@ dataloader = DataLoader(dataset=mnist, batch_size=batch_size, shuffle=True, drop
 ce_loss = nn.CrossEntropyLoss()
 
 # Optimisers
-D_opt = torch.optim.RMSprop(D.parameters(), lr=5e-5)
-G_opt = torch.optim.RMSprop(G.parameters(), lr=5e-5)
-Q_opt = torch.optim.Adam(Q.parameters(), lr=1e-3, betas=(0.5, 0.99))
+#D_opt = torch.optim.RMSprop(D.parameters(), lr=5e-5)
+#G_opt = torch.optim.RMSprop(G.parameters(), lr=5e-5)
+#Q_opt = torch.optim.Adam(Q.parameters(), lr=1e-3, betas=(0.5, 0.99))
 # Probably will have to change due to the fact that G uses W_d and Q BCE
+
+D_opt = torch.optim.Adam(D.parameters(), lr=1e-4, betas=(0., 0.9))
+G_opt = torch.optim.Adam([{'params':G.parameters()}, {'params':Q.parameters()}], lr=1e-4, betas=(0., 0.9))
 
 # Training parameters
 max_epoch = 50
@@ -127,10 +130,6 @@ for epoch in range(max_epoch+1):
 
         # Calculate total mutual information loss
         mutual_info_loss = Q_loss_discrete + Q_loss_continuous*0.1
-    
-        Q_opt.zero_grad()
-        mutual_info_loss.backward(retain_graph=True) # This or GnQ loss?
-        Q_opt.step()
     
         # Calculate total loss for Generator and Qrator
         GnQ_loss = G_loss + mutual_info_loss
