@@ -92,7 +92,7 @@ for epoch in range(max_epoch):
         if step % 1000 == 0:
             G.eval()
             img = vanilla_gan_get_sample_image(G, n_noise)
-            plt.imsave('samples/{}_step{}.jpg'.format(MODEL_NAME, str(step).zfill(3)), img, cmap='gray')
+            plt.imsave('vanilla_gan_samples/{}_step{}.jpg'.format(MODEL_NAME, str(step).zfill(3)), img, cmap='gray')
             G.train()
         step += 1
 
