@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
 from VanillaGAN import Discriminator, Generator
-from utils import sample_noise, log_gaussian, get_sample_image
+from utils import vanilla_get_sample_image
 
 
 CHECKPOINT_DIR = './vanilla_gan_checkpoints'
@@ -91,7 +91,7 @@ for epoch in range(max_epoch):
         
         if step % 1000 == 0:
             G.eval()
-            img = get_sample_image(G, n_noise)
+            img = vanilla_get_sample_image(G, n_noise)
             plt.imsave('samples/{}_step{}.jpg'.format(MODEL_NAME, str(step).zfill(3)), img, cmap='gray')
             G.train()
         step += 1
