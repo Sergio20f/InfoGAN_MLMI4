@@ -6,7 +6,7 @@ class Generator(nn.Module):
     """
     Convolutional Generator for MNIST
     """
-    def __init__(self, input_size=62,  num_classes=784):
+    def __init__(self, input_size=100,  num_classes=784):
         super(Generator, self).__init__()
         self.fc1 = nn.Linear(input_size, 1024)
         self.bn1 = nn.BatchNorm1d(1024)
