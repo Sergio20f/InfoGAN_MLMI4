@@ -7,7 +7,7 @@ from tensorboardX import SummaryWriter
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-from GAN import Discriminator, Generator, Qrator
+from VanillaGAN import Discriminator, Generator
 from utils import sample_noise, log_gaussian, get_sample_image
 
 
@@ -27,7 +27,6 @@ writer = SummaryWriter()
 
 D = Discriminator().to(DEVICE)
 G = Generator().to(DEVICE)
-Q = Qrator().to(DEVICE)
 
 if not os.path.exists("data/MNIST/"):
     transform = transforms.Compose([transforms.ToTensor(),
@@ -47,7 +46,7 @@ criterion = nn.BCELoss()
 
 # Optimisers
 D_opt = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0.5, 0.99))
-G_opt = torch.optim.Adam([{'params':G.parameters()}, {'params':Q.parameters()}], lr=1e-3, betas=(0.5, 0.99))
+G_opt = torch.optim.Adam(G.parameters(), lr=1e-3, betas=(0.5, 0.99))
 
 # Training parameters
 max_epoch = 50
