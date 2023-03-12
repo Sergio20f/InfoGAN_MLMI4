@@ -37,7 +37,7 @@ if not os.path.exists("data/CelebA/"):
                                     std=(0.5, 0.5, 0.5))
                                     ]
     )
-    celebaA = datasets.CelebA(root='./data/', train=True, transform=transform, download=True)
+    celebaA = datasets.CelebA(root='./data/', transform=transform, download=True)
 
 if not os.path.exists("samples/"):
     os.mkdir("samples/")
