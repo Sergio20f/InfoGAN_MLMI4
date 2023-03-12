@@ -7,8 +7,9 @@ from tensorboardX import SummaryWriter
 from torchvision import datasets, transforms
 from torch.utils.data import DataLoader
 
-from VanillaGAN import Discriminator, Generator
-from utils import vanilla_gan_get_sample_image
+from GAN import Discriminator, Generator, Qrator
+from utils import sample_noise, get_sample_image
+
 
 
 CHECKPOINT_DIR = './vanilla_gan_checkpoints'
@@ -27,6 +28,7 @@ writer = SummaryWriter()
 
 D = Discriminator().to(DEVICE)
 G = Generator().to(DEVICE)
+Q = Qrator().to(DEVICE)
 
 if not os.path.exists("data/MNIST/"):
     transform = transforms.Compose([transforms.ToTensor(),
@@ -42,60 +44,90 @@ batch_size = 128
 dataloader = DataLoader(dataset=mnist, batch_size=batch_size, shuffle=True, drop_last=True, pin_memory=True)
 
 # Losses
-criterion = nn.BCELoss()
+bce_loss = nn.BCELoss()
+ce_loss = nn.CrossEntropyLoss()
 
 # Optimisers
 D_opt = torch.optim.Adam(D.parameters(), lr=2e-4, betas=(0.5, 0.99))
-G_opt = torch.optim.Adam(G.parameters(), lr=1e-3, betas=(0.5, 0.99))
+G_opt = torch.optim.Adam(G.parameters(), lr=2e-4, betas=(0.5, 0.99))
 
 # Training parameters
 max_epoch = 50
 step = 0
 n_critic = 1 # for training more k steps about Discriminator
-n_noise = 100
-
+n_noise = 62
+n_c_discrete, n_c_continuous = 10, 2
 
 # Initialise the labels
 D_labels = torch.ones([batch_size, 1]).to(DEVICE) # Discriminator Label to real
 D_fakes = torch.zeros([batch_size, 1]).to(DEVICE) # Discriminator Label to fake
 
-# Train the GAN model
-for epoch in range(max_epoch):
-    for idx, (images, _) in enumerate(dataloader):
+# Train the InfoGAN model
+for epoch in range(max_epoch+1):
+    for idx, (images, labels) in enumerate(dataloader):
+        step += 1
+        
+        # Reshape labels to match batch size
+        labels = labels.view(batch_size, 1)
+        
         # Training Discriminator
         x = images.to(DEVICE)
-        x_outputs = D(x)
-        D_x_loss = criterion(x_outputs, D_labels)
+        x_outputs, _, = D(x)
+        D_x_loss = bce_loss(x_outputs, D_labels)
 
-        z = torch.randn(batch_size, n_noise).to(DEVICE)
-        z_outputs = D(G(z))
-        D_z_loss = criterion(z_outputs, D_fakes)
+        z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+        z_outputs, _, = D(G(z, c))
+        D_z_loss = bce_loss(z_outputs, D_fakes)
         D_loss = D_x_loss + D_z_loss
         
-        D.zero_grad()
+        D_opt.zero_grad()
         D_loss.backward()
         D_opt.step()
 
-        if step % n_critic == 0:
-            # Training Generator
-            z = torch.randn(batch_size, n_noise).to(DEVICE)
-            z_outputs = D(G(z))
-            G_loss = criterion(z_outputs, D_labels)
+        # Training Generator
+        z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+        
+        # Get discrete label from continuous vector using argmax
+        c_discrete_label = torch.max(c[:, :-2], 1)[1].view(-1, 1)
 
-            G.zero_grad()
-            G_loss.backward()
-            G_opt.step()
+        z_outputs, features = D(G(z, c))
+
+        G_loss = bce_loss(z_outputs, D_labels)
         
-        if step % 500 == 0:
-            print('Epoch: {}/{}, Step: {}, D Loss: {}, G Loss: {}'.format(epoch, max_epoch, step, D_loss.item(), G_loss.item()))
+
+        G_opt.zero_grad()
+        G_loss.backward()
+        G_opt.step()
+
+        # Log losses and histograms for tensorboard
+        if step > 500 and step % LOG_LOSS_FREQ == 0:
+            writer.add_scalar('loss/total', G_loss, step)
         
-        if step % 1000 == 0:
+        # Print losses every PRINT_LOSS_FREQ steps
+        if step % PRINT_LOSS_FREQ == 0:
+            print('Epoch: {}/{}, Step: {}, D Loss: {}, G Loss: {}, Time: {}'\
+                  .format(epoch, max_epoch, step, D_loss.item(), G_loss.item(), str(datetime.datetime.today())[:-7]))
+            
+        # Save generated images every SAVE_IMAGES_FREQ steps
+        if step % SAVE_IMAGES_FREQ == 0:
             G.eval()
-            img = vanilla_gan_get_sample_image(G, n_noise)
-            plt.imsave('vanilla_gan_samples/{}_step{}.jpg'.format(MODEL_NAME, str(step).zfill(3)), img, cmap='gray')
+            img1, img2, img3 = get_sample_image(n_noise, n_c_continuous, G)
+            plt.imsave('vanilla_gan_samples/{}_step{}_type1.jpg'.format(MODEL_NAME, str(step).zfill(3)), img1, cmap='gray')
+            plt.imsave('vanilla_gan_samples/{}_step{}_type2.jpg'.format(MODEL_NAME, str(step).zfill(3)), img2, cmap='gray')
+            plt.imsave('vanilla_gan_samples/{}_step{}_type3.jpg'.format(MODEL_NAME, str(step).zfill(3)), img3, cmap='gray')
             G.train()
-        step += 1
 
+        # Save model checkpoint every SAVE_CHECKPOINT_FREQ steps
+        if step % SAVE_CHECKPOINT_FREQ == 0:
+          checkpoint_path = os.path.join(CHECKPOINT_DIR, f'model_step{step}.pt')
+          torch.save({
+                'epoch': epoch,
+                'step': step,
+                'G_state_dict': G.state_dict(),
+                'D_state_dict': D.state_dict(),
+                'G_opt_state_dict': G_opt.state_dict(),
+                'D_opt_state_dict': D_opt.state_dict(),
+            }, checkpoint_path)
 
 writer.export_scalars_to_json("./all_summary.json")
 writer.close()
