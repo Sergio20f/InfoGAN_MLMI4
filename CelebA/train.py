@@ -58,7 +58,10 @@ max_epoch = 50
 step = 0
 n_critic = 1 # for training more k steps about Discriminator
 n_noise = 128
-n_c_discrete, n_c_continuous = 10, 0
+n_c_discrete_diff = 10 # number of cathegorical codes
+n_c_discrete = 10 # number of potental cathegoris for each cathegorical code
+n_c_continuous = 0
+n_c_discrete_list = [n_c_discrete_diff]*n_c_discrete
 
 # Initialise the labels
 D_labels = torch.ones([batch_size, 1]).to(DEVICE) # Discriminator Label to real
@@ -77,7 +80,7 @@ for epoch in range(max_epoch+1):
         x_outputs, _, = D(x)
         D_x_loss = bce_loss(x_outputs, D_labels)
 
-        z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+        z, c = sample_noise(batch_size, n_noise, n_c_discrete_list, n_c_continuous)
         z_outputs, _, = D(G(z, c))
         D_z_loss = bce_loss(z_outputs, D_fakes)
         D_loss = D_x_loss + D_z_loss
@@ -87,24 +90,24 @@ for epoch in range(max_epoch+1):
         D_opt.step()
 
         # Training Generator
-        z, c = sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=labels, supervised=True)
+        z, c = sample_noise(batch_size, n_noise, n_c_discrete_list, n_c_continuous)
         
         # Get discrete label from continuous vector using argmax
-        c_discrete_label = torch.max(c[:, :-2], 1)[1].view(-1, 1)
+        c_discrete_labels = [torch.max(c[:, i*n_c_discrete:(i+1)*n_c_discrete], 1)[1].view(-1, 1) for i in range(n_c_discrete_diff)]
 
         z_outputs, features = D(G(z, c))
-        c_discrete_out, cc_mu, cc_var = Q(features)
+        c_discrete_out = Q(features)
 
         G_loss = bce_loss(z_outputs, D_labels)
         
         # Calculate cross entropy loss for discrete code
-        Q_loss_discrete = ce_loss(c_discrete_out, c_discrete_label.view(-1))
+        Q_loss_discrete = sum([ce_loss(c_discrete_out[:, i*n_c_discrete:(i+1)*n_c_discrete], c_discrete_labels[i].view(-1)) for i in range(n_c_discrete_diff)])
         
         # Calculate log-likelihood of continuous code assuming Gaussian distribution
-        Q_loss_continuous = -torch.mean(torch.sum(log_gaussian(c[:, -2:], cc_mu, cc_var), 1))
+        # Q_loss_continuous = -torch.mean(torch.sum(log_gaussian(c[:, -2:], cc_mu, cc_var), 1))
         
         # Calculate total mutual information loss
-        mutual_info_loss = Q_loss_discrete + Q_loss_continuous*0.1
+        mutual_info_loss = Q_loss_discrete # + Q_loss_continuous*0.1
 
         # Calculate total loss for Generator and Qrator
         GnQ_loss = G_loss + mutual_info_loss
@@ -117,10 +120,10 @@ for epoch in range(max_epoch+1):
         if step > 500 and step % LOG_LOSS_FREQ == 0:
             writer.add_scalar('loss/total', GnQ_loss, step)
             writer.add_scalar('loss/Q_discrete', Q_loss_discrete, step)
-            writer.add_scalar('loss/Q_continuous', Q_loss_continuous, step)
+            # writer.add_scalar('loss/Q_continuous', Q_loss_continuous, step)
             writer.add_scalar('loss/Q', mutual_info_loss, step)
-            writer.add_histogram('output/mu', cc_mu)
-            writer.add_histogram('output/var', cc_var)
+            # writer.add_histogram('output/mu', cc_mu)
+            # writer.add_histogram('output/var', cc_var)
         
         # Print losses every PRINT_LOSS_FREQ steps
         if step % PRINT_LOSS_FREQ == 0:
@@ -130,10 +133,9 @@ for epoch in range(max_epoch+1):
         # Save generated images every SAVE_IMAGES_FREQ steps
         if step % SAVE_IMAGES_FREQ == 0:
             G.eval()
-            img1, img2, img3 = get_sample_image(n_noise, n_c_continuous, G)
-            plt.imsave('samples/{}_step{}_type1.jpg'.format(MODEL_NAME, str(step).zfill(3)), img1, cmap='gray')
-            plt.imsave('samples/{}_step{}_type2.jpg'.format(MODEL_NAME, str(step).zfill(3)), img2, cmap='gray')
-            plt.imsave('samples/{}_step{}_type3.jpg'.format(MODEL_NAME, str(step).zfill(3)), img3, cmap='gray')
+            img = get_sample_image(n_noise, n_c_continuous, n_c_discrete_list, G)
+            for i in range(10):
+                plt.imsave('samples/{}_step{}_type{}.jpg'.format(MODEL_NAME, str(step).zfill(3), i), img[i], cmap='gray')
             G.train()
 
         # Save model checkpoint every SAVE_CHECKPOINT_FREQ steps

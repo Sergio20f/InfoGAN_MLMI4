@@ -31,43 +31,52 @@ def to_onehot(x, num_classes=10):
     return c
 
 
-def sample_noise(batch_size, n_noise, n_c_discrete, n_c_continuous, label=None, supervised=False):
+def sample_noise(batch_size, n_noise, n_c_discrete_list, n_c_continuous, labels=None, supervised=False):
     """
     Generates random noise vectors and latent codes to be used as input to a generative model.
 
     Args:
         batch_size (int): the size of the batch.
         n_noise (int): the size of the noise vector.
-        n_c_discrete (int): the number of categories for the discrete latent code.
+        n_c_discrete_list (list of ints): the number of categories for each discrete latent code.
         n_c_continuous (int): the size of the continuous latent code.
-        label (int or None): the labels for the categorical latent code.
+        labels (list of ints or None): the labels for the categorical latent codes.
         supervised (bool): whether to use supervised or unsupervised learning.
 
     Returns:
         A tuple (z, c) containing:
         - z (FloatTensor): a random noise vector of size (batch_size, n_noise).
-        - c (FloatTensor): a concatenated latent code of size (batch_size, n_c_discrete+n_c_continuous).
-          The first n_c_discrete columns correspond to the one-hot encoded categorical latent code,
-          while the last n_c_continuous columns correspond to the continuous latent code.
+        - c (FloatTensor): a concatenated latent code of size (batch_size, sum(n_c_discrete_list)+n_c_continuous).
+          The first sum(n_c_discrete_list) columns correspond to the concatenated one-hot encoded categorical
+          latent codes, while the last n_c_continuous columns correspond to the continuous latent code.
     """
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     z = torch.randn(batch_size, n_noise).to(DEVICE)
-    if supervised:
-        # generate a one-hot encoded categorical latent code from the label
-        c_discrete = to_onehot(label).to(DEVICE) # (B,10)
-    else:
-        # generate a one-hot encoded categorical latent code with random integers
-        c_discrete = to_onehot(torch.LongTensor(batch_size, 1).random_(0, n_c_discrete)).to(DEVICE) # (B,10)
+    
+    c_discrete_list = []
+    for i, n_c_discrete in enumerate(n_c_discrete_list):
+        if supervised:
+            # generate a one-hot encoded categorical latent code from the label
+            c_discrete = to_onehot(labels[i]).to(DEVICE) # (B,10)
+        else:
+            # generate a one-hot encoded categorical latent code with random integers
+            c_discrete = to_onehot(torch.LongTensor(batch_size, 1).random_(0, n_c_discrete)).to(DEVICE) # (B,10)
+        c_discrete_list.append(c_discrete)
+    
+    # concatenate the categorical latent codes along the second dimension
+    c_discrete_concat = torch.cat(c_discrete_list, 1)
+    
     # generate a continuous latent code with values between -1 and 1
     c_continuous = torch.zeros(batch_size, n_c_continuous).uniform_(-1, 1).to(DEVICE) # (B,2)
+    
     # concatenate the categorical and continuous latent codes along the second dimension
-    c = torch.cat((c_discrete.float(), c_continuous), 1)
+    c = torch.cat((c_discrete_concat.float(), c_continuous), 1)
     
     return z, c
 
 
-def get_sample_image(n_noise, n_c_continuous, G):
+def get_sample_image(n_noise, n_c_continuous, n_c_discrete_list, G):
     """
     Generates and saves 100 sample images from a generative model.
 
@@ -83,48 +92,18 @@ def get_sample_image(n_noise, n_c_continuous, G):
     DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
     images = []
-    
-    # Generate images with varying continuous code
-    for cc_type in range(2):
-        for num in range(10):
-            fix_z = torch.randn(1, n_noise)
-            z = fix_z.to(DEVICE)
-            cc = -1
-            for i in range(10):
-                cc += 0.2
-                # One-hot encode the discrete code
-                c_discrete = to_onehot(num).to(DEVICE) # (B,10)
-                c_continuous = torch.zeros(1, n_c_continuous).to(DEVICE)
-                # Set the value of the continuous code
-                c_continuous.data[:, cc_type].add_(cc)
-                # Combine the discrete and continuous codes
-                c = torch.cat((c_discrete.float(), c_continuous), 1)
+
+    # Generate images with varying discrete code
+    for code in range(10):
+        for row in range(10):
+            z, c = sample_noise(1, n_noise, n_c_discrete_list, n_c_continuous)
+            c[:, code*10:(code+1)*10] = 0
+            for value in range(10):
+                c[:, value] = 1
                 # Generate an image from the combined code and the noise vector
                 y_hat = G(z, c)
                 # Concatenate the images horizontally
-                line_img = torch.cat((line_img, y_hat.view(28, 28)), dim=1) if i > 0 else y_hat.view(28, 28)
-            
-            # Concatenate the rows of images vertically
-            all_img = torch.cat((all_img, line_img), dim=0) if num > 0 else line_img
-
-        # Convert the tensor to a numpy array
-        img = all_img.cpu().data.numpy()
-        images.append(img)
-    
-    # Generate images with varying discrete code
-    for num in range(10):
-        for i in range(10):
-            # One-hot encode the discrete code
-            c_discrete = to_onehot(i).to(DEVICE) # (B,10)
-            z = torch.randn(1, n_noise).to(DEVICE)
-            # Set the continuous code to zero
-            c_continuous = torch.zeros(1, n_c_continuous).to(DEVICE)
-            # Combine the discrete and continuous codes
-            c = torch.cat((c_discrete.float(), c_continuous), 1)
-            # Generate an image from the combined code and the noise vector
-            y_hat = G(z, c)
-            # Concatenate the images horizontally
-            line_img = torch.cat((line_img, y_hat.view(28, 28)), dim=1) if i > 0 else y_hat.view(28, 28)
+                line_img = torch.cat((line_img, y_hat.view(32, 32)), dim=1) if i > 0 else y_hat.view(32, 32)
         
         # Concatenate the rows of images vertically
         all_img = torch.cat((all_img, line_img), dim=0) if num > 0 else line_img
@@ -133,7 +112,7 @@ def get_sample_image(n_noise, n_c_continuous, G):
     img = all_img.cpu().data.numpy()
     images.append(img)
     
-    return images[0], images[1], images[2]
+    return images
 
 
 def log_gaussian(c, mu, var):
