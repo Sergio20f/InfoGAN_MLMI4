@@ -3,3 +3,4 @@ backup/
 data/
 old/
 runs/
+checkpoints/
