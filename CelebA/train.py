@@ -14,7 +14,7 @@ from utils import sample_noise, log_gaussian, get_sample_image
 CHECKPOINT_DIR = './checkpoints'
 MODEL_NAME = 'infoGAN'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-IMAGE_DIM = (64, 64, 3)
+IMAGE_DIM = (32, 32, 3)
 
 SAVE_IMAGES_FREQ = 1000 # 1000 originaly
 PRINT_LOSS_FREQ = 500 # 500 originaly
@@ -37,7 +37,8 @@ if not os.path.exists("data/CelebA/"):
                                     std=(0.5, 0.5, 0.5))
                                     ]
     )
-    celebaA = datasets.CelebA(root='./data/', transform=transform, download=True)
+    #celebaA = datasets.CelebA(root='./data/', transform=transform, download=True)
+    celebaA = datasets.ImageFolder(root='./celeba/', transform=transform)
 
 if not os.path.exists("samples/"):
     os.mkdir("samples/")

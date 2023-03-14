@@ -103,10 +103,10 @@ def get_sample_image(n_noise, n_c_continuous, n_c_discrete_list, G):
                 # Generate an image from the combined code and the noise vector
                 y_hat = G(z, c)
                 # Concatenate the images horizontally
-                line_img = torch.cat((line_img, y_hat.view(32, 32)), dim=1) if i > 0 else y_hat.view(32, 32)
+                line_img = torch.cat((line_img, y_hat.view(32, 32)), dim=1) if value > 0 else y_hat.view(32, 32)
         
         # Concatenate the rows of images vertically
-        all_img = torch.cat((all_img, line_img), dim=0) if num > 0 else line_img
+        all_img = torch.cat((all_img, line_img), dim=0) if row > 0 else line_img
     
     # Convert the tensor to a numpy array
     img = all_img.cpu().data.numpy()

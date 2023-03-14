@@ -70,7 +70,8 @@ class Discriminator(nn.Module):
         y = self.bn3(y)
         y = self.activation(y)
 
-        d = self.fc1(y)
+        d = y.view(y.size(0), -1)
+        d = self.fc1(d)
         d = self.activation2(d)  # Real / Fake
 
         return d, y # return with top layer features for Q
@@ -101,7 +102,7 @@ class Qrator(nn.Module):
     def forward(self, x):
         # Seperate code
         c = x.view(x.size(0), -1)
-        c = self.fc1(x)
+        c = self.fc1(c)
         c = self.bn1(c)
         c = self.activation1(c)
         c = self.fc2(c)
@@ -109,11 +110,11 @@ class Qrator(nn.Module):
         c_discrete_list = []
 
         for i in range(0, 100, 10):
-            c_slice = c[i:i+10]  # Slice the tensor to get 10 consecutive values
-            c_discrete = torch.softmax(c_slice, dim=-1)  # Convert to discrete probability distribution
+            c_discrete = c[:, i:i+10]  # Slice the tensor to get 10 consecutive values
+            # c_discrete = torch.softmax(c_slice, dim=-1)  # Convert to discrete probability distribution
             c_discrete_list.append(c_discrete)
 
         # c_discrete = torch.softmax(c[:, :10], dim=-1) # Digit Label {0~9}
         # c_mu = c[:, 10:12] # mu & var of Rotation & Thickness
         # c_var = c[:, 12:14].exp() # mu & var of Rotation & Thickness
-        return c_discrete_list
+        return torch.cat(c_discrete_list, dim=1)
