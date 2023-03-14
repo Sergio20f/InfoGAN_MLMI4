@@ -180,3 +180,18 @@ def wget_sample_image(G, DEVICE, n_noise=100):
         img[j*28:(j+1)*28] = np.concatenate([x for x in result], axis=-1)
 
     return img
+
+
+def to_onehot_2(x, num_classes=10):
+    assert isinstance(x, int) or isinstance(x, (torch.LongTensor, torch.cuda.LongTensor))
+    if isinstance(x, int):
+        c = torch.zeros(1, num_classes).long()
+        c[0][x] = 1
+    else:
+        x = x.cpu()
+        c = torch.LongTensor(x.size(0), num_classes)
+        c.zero_()
+        c.scatter_(1, x, 1) # dim, index, src value
+
+    return c
+    
