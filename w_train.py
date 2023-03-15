@@ -6,13 +6,14 @@ from torch.utils.data import DataLoader
 from torchvision import datasets, transforms
 from tensorboardX import SummaryWriter
 import matplotlib.pyplot as plt
+import numpy as np
 
 from WGAN import W_Discriminator, W_Generator, W_Qrator#, Q_test
 from utils import to_onehot_2, sample_noise, log_gaussian, get_sample_image
 
 
 CHECKPOINT_DIR = './checkpoints'
-MODEL_NAME = 'W-GAN'
+MODEL_NAME = 'W-GAN-100n-x128'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 SAVE_IMAGES_FREQ = 1000 # 1000 originaly
@@ -55,7 +56,7 @@ D_opt = torch.optim.Adam(D.parameters(), lr=1e-4, betas=(0., 0.9))
 G_opt = torch.optim.Adam([{'params':G.parameters()}, {'params':Q.parameters()}], lr=1e-4, betas=(0., 0.9))
 
 # Training parameters
-max_epoch = 100 # need more than 100 epochs for training generator
+max_epoch = 5 # need more than 100 epochs for training generator
 step = 0
 g_step = 0
 n_noise = 62
@@ -65,6 +66,10 @@ lambda_gp = 10
 # Initialise the labels
 D_labels = torch.ones([batch_size, 1]).to(DEVICE) # Discriminator Label to real
 D_fakes = torch.zeros([batch_size, 1]).to(DEVICE) # Discriminator Label to fake
+
+# Log losses
+G_loss_list = []
+D_loss_list = []
 
 # Train WGAN
 for epoch in range(max_epoch+1):
@@ -117,15 +122,18 @@ for epoch in range(max_epoch+1):
             Q_loss_continuous = -torch.mean(torch.sum(log_gaussian(c[:, -2:], cc_mu, cc_var), 1))
 
             # Calculate total mutual information loss
-            mutual_info_loss = Q_loss_discrete + Q_loss_continuous*0.1
+            mutual_info_loss = Q_loss_discrete + Q_loss_continuous*1 # 0.1
 
             # Calculate total loss for Generator and Qrator
-            GnQ_loss = G_loss + 1*mutual_info_loss # lambda
+            GnQ_loss = G_loss + 10*mutual_info_loss # lambda used to be 1 originally # 10
 
             D.zero_grad()
             G.zero_grad()
             GnQ_loss.backward()
             G_opt.step()
+
+        G_loss_list.append(G_loss.item())
+        D_loss_list.append(D_loss.item())
             
         # Log losses and histograms for tensorboard
         if step > 500 and step % LOG_LOSS_FREQ == 0:
@@ -133,13 +141,16 @@ for epoch in range(max_epoch+1):
             writer.add_scalar('loss/Q_discrete', Q_loss_discrete, step)
             writer.add_scalar('loss/Q_continuous', Q_loss_continuous, step)
             writer.add_scalar('loss/Q', mutual_info_loss, step)
+            writer.add_scalar('loss/G', G_loss, step)
+            writer.add_scalar('loss/D', D_loss, step)
             writer.add_histogram('output/mu', cc_mu)
             writer.add_histogram('output/var', cc_var)
         
         # Print losses every PRINT_LOSS_FREQ steps
         if step % PRINT_LOSS_FREQ == 0:
-            print('Epoch: {}/{}, Step: {}, D Loss: {}, G Loss: {}, GnQ Loss: {}, Time: {}'\
-                  .format(epoch, max_epoch, step, D_loss.item(), G_loss.item(), GnQ_loss.item(), str(datetime.datetime.today())[:-7]))
+            #print([np.squeeze(torch.argmax(i).cpu().numpy()).item() for i in c_discrete_out], c_discrete_label.view(-1))
+            print('Epoch: {}/{}, Step: {}, D Loss: {}, G Loss: {}, GnQ Loss: {}, MI_c: {}, MI_d: {}, Time: {}'\
+                  .format(epoch, max_epoch, step, D_loss.item(), G_loss.item(), GnQ_loss.item(), Q_loss_continuous.item(), Q_loss_discrete.item(), str(datetime.datetime.today())[:-7]))
 
         # Save generated images every SAVE_IMAGES_FREQ steps
         if step % SAVE_IMAGES_FREQ == 0:
@@ -162,5 +173,8 @@ for epoch in range(max_epoch+1):
                 'D_opt_state_dict': D_opt.state_dict(),
             }, checkpoint_path)
           
+np.savetxt('G_loss', G_loss_list)
+np.savetxt('D_loss', D_loss_list)
+
 writer.export_scalars_to_json("./all_summary.json")
 writer.close()
