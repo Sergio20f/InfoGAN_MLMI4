@@ -2,104 +2,177 @@ import torch
 import torch.nn as nn
 
 
+class Discriminator(nn.Module):
+    """
+        Convolutional Discriminator for MNIST
+    """
+    def __init__(self, in_channel=1):
+        super(Discriminator, self).__init__()
+        self.layer1 = nn.Sequential(# 28 -> 14
+            nn.Conv2d(in_channel, 64, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.1),
+        )
+        self.layer2 = nn.Sequential(# 14 -> 7
+            nn.Conv2d(64, 128, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.1),
+        )
+        self.layer3 = nn.Sequential(#
+            nn.Linear(128*7*7, 1024),
+            nn.BatchNorm1d(1024),
+            nn.LeakyReLU(0.1),
+        )
+        self.fc = nn.Sequential(
+            nn.Linear(1024, 1),
+            nn.Sigmoid(),
+        )
+
+    
+    def forward(self, x):
+        y_ = self.layer1(x)
+        y_ = self.layer2(y_)
+        y_ = y_.view(y_.size(0), -1)
+        y_ = self.layer3(y_)
+        d = self.fc(y_) # Real / Fake        
+        return d, y_ # return with top layer features for M
+
+
 class Generator(nn.Module):
     """
-    Convolutional Generator for MNIST
+        Convolutional Generator for MNIST
     """
     def __init__(self, input_size=62, code_size=12, num_classes=784):
         super(Generator, self).__init__()
-        self.fc1 = nn.Linear(input_size+code_size, 1024)
-        self.bn1 = nn.BatchNorm1d(1024)
-        self.fc2 = nn.Linear(1024, 7*7*128)
-        self.bn2 = nn.BatchNorm1d(7*7*128)
-        self.conv1 = nn.ConvTranspose2d(128, 64, kernel_size=4, stride=2, padding=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(64)
-        self.conv2 = nn.ConvTranspose2d(64, 1, kernel_size=4, stride=2, padding=1, bias=False)
-        self.activation1 = nn.ReLU()
-        self.activation2 = nn.Tanh()
+        self.layer1 = nn.Sequential(
+            nn.Linear(input_size+code_size, 1024),
+            nn.BatchNorm1d(1024),
+            nn.ReLU(),
+        )
+        self.layer2 = nn.Sequential(
+            nn.Linear(1024, 7*7*128),
+            nn.BatchNorm1d(7*7*128),
+            nn.ReLU(),
+        )
+        self.layer3 = nn.Sequential(# input: 7 by 7, output: 14 by 14
+            nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.ReLU(),
+        )
+        self.layer4 = nn.Sequential(# input: 14 by 14, output: 28 by 28
+            nn.ConvTranspose2d(64, 1, 4, stride=2, padding=1, bias=False),
+            #nn.ReLU()
+            nn.Tanh(),
+        )
         
     def forward(self, z, c):
         z = z.view(z.size(0), -1)
         c = c.view(c.size(0), -1)
         noise = torch.cat((z, c), 1)
-        x = self.fc1(noise)
+        x_ = self.layer1(noise)
+        x_ = self.layer2(x_)
+        x_ = x_.view(x_.size(0), 128, 7, 7)
+        x_ = self.layer3(x_)
+        x_ = self.layer4(x_)
+        return x_
+
+
+class Mine(nn.Module):
+    """Convolutional Network for learning the MINE."""
+    
+    def __init__(self, sample_size=28*28, noise_size=12, output_size=1, hidden_size=128):
+        super().__init__()
+        self.layer1 = nn.Sequential(# 28 -> 14
+            nn.Conv2d(1, 64, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(64),
+            nn.LeakyReLU(0.1),
+        )
+        self.layer2 = nn.Sequential(# 14 -> 7
+            nn.Conv2d(64, 128, 4, stride=2, padding=1, bias=False),
+            nn.BatchNorm2d(128),
+            nn.LeakyReLU(0.1),
+        )
+        self.layer3 = nn.Sequential(#
+            nn.Linear(128*7*7+noise_size, 1024),
+            nn.BatchNorm1d(1024),
+            nn.LeakyReLU(0.1),
+        )   
+
+        self.fc = nn.Sequential(
+            nn.Linear(1024, 128),
+            nn.BatchNorm1d(128),
+            nn.LeakyReLU(0.1),
+            nn.Linear(128, 12),
+        )
+        self.flatten = nn.Flatten()
+        self.cat = ConcatLayer()
+                
+    def forward(self, sample, noise):
+        x_s = self.layer1(sample)
+        x_s = self.layer2(x_s)
+        flattened_sample = self.flatten(x_s)
+        x = self.cat(flattened_sample, noise)
+        x = self.layer3(x)
+        x = self.fc(x)
+        discrete = x[:10]
+        cont = x[10:]
+        
+        return discrete, cont
+
+
+
+class OldMine(nn.Module):
+    """Old architecture for M."""
+    
+    def __init__(self, sample_size=28*28, noise_size=12, output_size=1, hidden_size=128):
+        super().__init__()
+        self.conv1 = nn.Conv2d(1, 16, 4, stride=2, padding=1, bias=False)
+        self.conv2 = nn.Conv2d(16, 32, 4, stride=2, padding=1, bias=False)
+        self.conv3 = nn.Conv2d(32, 64, 3, stride=2, padding=1, bias=False)
+        self.flatten = nn.Flatten()
+        self.cat = ConcatLayer()
+        self.layer1 = nn.Linear(64*4*4 + noise_size, 512)
+        self.bn1 = nn.BatchNorm1d(512)
+        self.layer2 = nn.Linear(512, 512)
+        self.bn2 = nn.BatchNorm1d(512)
+        self.activation1 = nn.LeakyReLU(0.1)
+        self.layer3 = nn.Linear(512, 256)      
+        self.bn3 = nn.BatchNorm1d(256)
+        self.layer4 = nn.Linear(256, 12)
+        self.activation2=nn.ReLU()
+        
+
+        #self.layer1 = nn.Linear(sample_size + noise_size, 400)
+        #self.layer2 = nn.Linear(400, 400)
+        #self.layer3 = nn.Linear(400, 400)
+        #self.layer4 = nn.Linear(400, 12)
+        #self.activation = nn.ReLU()
+
+                
+    def forward(self, sample, noise):
+        x_s = self.conv1(sample)
+        x_s = self.activation2(x_s)
+        x_s = self.conv2(x_s)
+        x_s = self.activation2(x_s)
+        x_s = self.conv3(x_s)
+        x_s = self.activation2(x_s)
+        flattened_sample = self.flatten(x_s)
+        x = self.cat(flattened_sample, noise)
+        x = self.layer1(x)
         x = self.bn1(x)
         x = self.activation1(x)
-        x = self.fc2(x)
+        x = self.layer2(x)
         x = self.bn2(x)
         x = self.activation1(x)
-        x = x.view(x.size(0), 128, 7, 7)
-        x = self.conv1(x)
+        x = self.layer3(x)
         x = self.bn3(x)
         x = self.activation1(x)
-        x = self.conv2(x)
-        x = self.activation2(x)
-
-        return x
-
-
-class Discriminator(nn.Module):
-    """
-    Convolutional Discriminator for MNIST
-    """
-    def __init__(self, in_channel=1):
-        super(Discriminator, self).__init__()
-        self.conv1 = nn.Conv2d(in_channel, 64, kernel_size=4, stride=2, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.activation = nn.LeakyReLU(0.1)
-        self.conv2 = nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(128)
-        self.fc1 = nn.Linear(128*7*7, 1024)
-        self.bn3 = nn.BatchNorm1d(1024)
-        self.fc2 = nn.Linear(1024, 1)
-        self.activation2 = nn.Sigmoid()
-    
-    def forward(self, x):
-        y = self.conv1(x)
-        y = self.bn1(y)
-        y = self.activation(y)
-        y = self.conv2(y)
-        y = self.bn2(y)
-        y = self.activation(y)
-        y = y.view(y.size(0), -1)
-        y = self.fc1(y)
-        y = self.bn3(y)
-        y = self.activation(y)
-        d = self.fc2(y)
-        d = self.activation2(d)  # Real / Fake 
-
-        return d, y # return with top layer features for Q
-
-
-class Qrator(nn.Module):
-    """
-    Regularization Network for increasing Mutual Information in InfoGAN.
-
-    This network takes as input the features from the discriminator's last hidden layer and outputs 
-    three sets of codes:
-    - c_discrete: a categorical code that represents the digit label (0-9) of the generated image.
-    - c_mu: a continuous code that represents the mean values of the rotation and thickness of the generated image.
-    - c_var: a continuous code that represents the variances of the rotation and thickness of the generated image.
-
-    By maximizing the mutual information between the generated images and these codes, the generator can 
-    learn to control these aspects of the generated images and produce more diverse and meaningful samples. 
-    The Qrator network helps to estimate these codes from the discriminator's features, and the generator 
-    is trained to maximize the mutual information between these codes and the generated images.
-    """
-    def __init__(self):
-        super(Qrator, self).__init__()
-        self.fc1 = nn.Linear(1024, 128)
-        self.bn1 = nn.BatchNorm1d(128)
-        self.activation1 = nn.LeakyReLU(0.1)
-        self.fc2 = nn.Linear(128, 14)
+        #x = self.layer3(x)
+        #x = self.bn3(x)
+        #x = self.activation1(x)
+        x = self.layer4(x)
+        #x = self.activation(x)
+        discrete = x[:10]
+        cont = x[10:]
         
-    def forward(self, x):
-        # Seperate code
-        c = self.fc1(x)
-        c = self.bn1(c)
-        c = self.activation1(c)
-        c = self.fc2(c)
-        c_discrete = torch.softmax(c[:, :10], dim=-1) # Digit Label {0~9}
-        c_mu = c[:, 10:12] # mu & var of Rotation & Thickness
-        c_var = c[:, 12:14].exp() # mu & var of Rotation & Thickness
-        return c_discrete, c_mu, c_var
+        return discrete, cont

@@ -169,3 +169,33 @@ def sample_c_discrete(n_samples, n_classes):
     c = np.zeros((n_samples, n_classes))
     c[np.arange(n_samples), np.random.randint(0, n_classes, n_samples)] = 1
     return torch.tensor(c, dtype=torch.float32)
+
+
+def fro_norm(model, eps=1e-8):
+  params = model.parameters()
+  total_norm = 0
+  for p in params:
+    if p.grad is None:
+      continue
+    param_norm = p.grad.data.norm(p='fro')
+    total_norm += param_norm**2
+  total_norm = total_norm**0.5
+  return total_norm
+
+def adaptive_clip_grad(M_model, G_norm, M_norm, eps=1e-8):
+    parameters = [p for p in M_model.parameters() if p.requires_grad]
+    if M_norm > 0.15:
+      clip_grad(M_model)
+      
+    clip_coef = min(G_norm, M_norm)/(M_norm + eps)
+    for p in parameters:
+          p.grad.detach().mul_(clip_coef.to(p.grad.device))
+
+
+def clip_grad(model, eps=1e-8):
+    parameters = [p for p in model.parameters() if p.requires_grad]
+    my_fro_norm = fro_norm(model)
+    if my_fro_norm > 0.15:
+      clip_coef = 0.15 / my_fro_norm
+      for p in parameters:
+        p.grad.detach().mul_(clip_coef.to(p.grad.device))
